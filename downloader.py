@@ -179,10 +179,14 @@ def _playlist_download_worker(job_id: str, tracks: list, folder_name: str, quali
                 for file in files:
                     file_path = os.path.join(root, file)
                     zf.write(file_path, arcname=file)
-        shutil.rmtree(playlist_dir, ignore_errors=True)
+        
+        # We NO LONGER delete the playlist_dir! The user wants the folder to stay on the server.
         download_jobs[job_id]["zip_path"] = zip_path
         download_jobs[job_id]["zip_name"] = f"{safe_folder}.zip"
     except Exception as e:
+        print(f"ZIPPING ERROR: {e}")
+        import traceback
+        traceback.print_exc()
         download_jobs[job_id]["error"] = f"Zipping failed: {e}"
 
     download_jobs[job_id]["status"] = "done"
