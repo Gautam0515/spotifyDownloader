@@ -422,14 +422,12 @@ async function pollDownloadJob(jobId, btn) {
       if (job.status === 'done') {
         document.getElementById('dlModalStats').textContent = `${job.total} / ${job.total} tracks \u2014 Done!`;
         document.getElementById('dlModalEta').textContent = 'Finished';
-        document.getElementById('dlModal').querySelector('.dl-modal-title').textContent = '\u2705 Download Complete!';
-        if (job.folder) {
-          document.getElementById('dlModalFolder').textContent = `\ud83d\udcc2 Preparing ZIP file...`;
-        }
-        showToast('\u2705 Downloading your songs...', 'success');
+        document.getElementById('dlModal').querySelector('.dl-modal-title').textContent = '\u2705 Ready to Download!';
         
-        // Trigger native download of the ZIP file
-        window.location.href = `/api/download/zip/${jobId}`;
+        const folderEl = document.getElementById('dlModalFolder');
+        folderEl.innerHTML = `<a href="/api/download/zip/${jobId}" class="btn-primary" style="display:inline-block; padding:12px 24px; text-decoration:none; margin-top:15px; font-weight:bold;">📥 Save ZIP to Device</a>`;
+        
+        showToast('\u2705 Ready! Tap the button to save.', 'success');
         
         if (selectMode) toggleSelectMode();
       } else {
