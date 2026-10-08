@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SpotiSync – Spotify → YouTube Music Converter</title>
+  <meta name="description" content="Convert any public Spotify playlist to YouTube Music links instantly. No login required." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <div class="bg-orbs">
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+    <div class="orb orb-3"></div>
+  </div>
+
+  <header class="header">
+    <div class="header-inner">
+      <div class="logo" onclick="showView('home')">
+        <span class="logo-icon">🎵</span>
+        <span class="logo-text">SpotiSync</span>
+        <span class="logo-badge">Beta</span>
+      </div>
+      <nav class="nav">
+        <button class="nav-btn active" id="navHome" onclick="showView('home')">Home</button>
+        <button class="nav-btn" id="navHistory" onclick="showView('history')">My Playlists</button>
+      </nav>
+    </div>
+  </header>
+
+  <!-- ===== HOME VIEW ===== -->
+  <main id="viewHome" class="view active">
+    <section class="hero">
+      <div class="hero-tag">✨ No login required · Public playlists only</div>
+      <h1 class="hero-title">Convert Any Playlist<br /><span class="gradient-text">Instantly</span></h1>
+      <p class="hero-subtitle">Paste a public Spotify playlist link. We'll find every song on YouTube Music and store all the links for you — no API key needed.</p>
+
+      <div class="input-card" id="inputCard">
+        <div class="input-row">
+          <div class="input-icon">🔗</div>
+          <input
+            type="text"
+            id="playlistUrl"
+            class="url-input"
+            placeholder="https://open.spotify.com/playlist/..."
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <button class="btn-primary" id="convertBtn" onclick="startConversion()">
+            <span class="btn-label">Convert</span>
+            <span class="btn-icon">→</span>
+          </button>
+        </div>
+        <div class="input-hint">Paste a public Spotify playlist share link · Works with any playlist you can open in a browser</div>
+      </div>
+
+      <!-- Progress Card -->
+      <div class="progress-card" id="progressCard" style="display:none">
+        <div class="progress-header">
+          <div class="progress-status-dot"></div>
+          <span id="progressStatus">Fetching playlist...</span>
+          <span id="progressCount" class="progress-count">0 / 0</span>
+        </div>
+        <div class="progress-bar-track">
+          <div class="progress-bar-fill" id="progressBarFill"></div>
+        </div>
+        <div id="progressPlaylistName" class="progress-playlist-name"></div>
+        <div class="live-feed" id="liveFeed"></div>
+      </div>
+    </section>
+
+    <!-- Results Section -->
+    <section class="results-section" id="resultsSection" style="display:none">
+      <div class="results-header">
+        <div>
+          <h2 class="results-title" id="resultsTitle">Results</h2>
+          <p class="results-subtitle" id="resultsSubtitle"></p>
+        </div>
+        <div class="results-actions">
+          <!-- Quality selector -->
+          <div class="quality-select-wrap">
+            <select id="qualitySelect" class="quality-select">
+              <option value="best">Best Quality (M4A)</option>
+              <option value="mp3" selected>MP3 320 kbps (⚡ ffmpeg)</option>
+              <option value="mp3_192">MP3 192 kbps (⚡ ffmpeg)</option>
+            </select>
+          </div>
+          <button class="btn-outline" id="toggleSelectBtn" onclick="toggleSelectMode()">&#10003; Select</button>
+          <button class="btn-outline btn-download-selected" id="downloadSelectedBtn" onclick="downloadSelected()" style="display:none">&#8659; Download Selected (0)</button>
+          <button class="btn-outline btn-download-all" id="downloadAllBtn" onclick="downloadAll()">&#8659; Download All</button>
+          <button class="btn-outline" id="exportCsvBtn" onclick="exportCSV()">&#8659; CSV</button>
+          <button class="btn-outline" id="exportJsonBtn" onclick="exportJSON()">&#8659; JSON</button>
+        </div>
+      </div>
+
+      <!-- Download All progress modal -->
+      <div class="dl-modal" id="dlModal" style="display:none">
+        <div class="dl-modal-inner">
+          <div class="dl-modal-title">&#8659; Downloading Playlist...</div>
+          <div class="progress-bar-track" style="margin:12px 0">
+            <div class="progress-bar-fill" id="dlProgressFill" style="width:0%"></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:8px">
+            <div class="dl-modal-stats" id="dlModalStats">0 / 0 tracks</div>
+            <div class="dl-modal-stats" id="dlModalEta">ETA: calculating...</div>
+          </div>
+          <div class="dl-modal-folder" id="dlModalFolder"></div>
+          <button class="btn-outline" onclick="closeDlModal()" style="margin-top:12px;width:100%">Close</button>
+        </div>
+      </div>
+
+      <div class="filter-bar">
+        <input type="text" id="searchFilter" class="filter-input" placeholder="🔍  Filter songs..." oninput="filterTracks()" />
+        <div class="filter-tags">
+          <button class="filter-tag active" onclick="setFilter('all', this)">All</button>
+          <button class="filter-tag" onclick="setFilter('found', this)">✅ Found</button>
+          <button class="filter-tag" onclick="setFilter('not_found', this)">❌ Not Found</button>
+        </div>
+      </div>
+
+      <div class="tracks-grid" id="tracksGrid"></div>
+    </section>
+  </main>
+
+  <!-- ===== HISTORY VIEW ===== -->
+  <main id="viewHistory" class="view" style="display:none">
+    <div class="page-header">
+      <h2 class="page-title">My Playlists</h2>
+      <p class="page-subtitle">Previously converted playlists</p>
+    </div>
+    <div class="playlists-grid" id="playlistsGrid">
+      {% if playlists %}
+        {% for p in playlists %}
+        <div class="playlist-card" onclick="loadPlaylist({{ p.id }})">
+          {% if p.image %}
+          <img src="{{ p.image }}" class="playlist-thumb" alt="{{ p.playlist_name }}" />
+          {% else %}
+          <div class="playlist-thumb-placeholder">🎵</div>
+          {% endif %}
+          <div class="playlist-card-info">
+            <div class="playlist-card-name">{{ p.playlist_name }}</div>
+            <div class="playlist-card-meta">{{ p.owner }} · {{ p.total_tracks }} tracks</div>
+            <div class="playlist-card-date">{{ p.created_at[:10] }}</div>
+          </div>
+          <div class="playlist-card-actions">
+            <button class="icon-btn" onclick="event.stopPropagation(); exportCSVById({{ p.id }})">⬇ CSV</button>
+            <button class="icon-btn danger" onclick="event.stopPropagation(); deletePlaylist({{ p.id }}, this)">🗑</button>
+          </div>
+        </div>
+        {% endfor %}
+      {% else %}
+        <div class="empty-state">
+          <div class="empty-icon">📭</div>
+          <div class="empty-text">No playlists yet. Convert one!</div>
+        </div>
+      {% endif %}
+    </div>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

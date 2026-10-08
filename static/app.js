@@ -1,0 +1,527 @@
+/* =====================================================
+   SpotiSync – Frontend JavaScript
+   ===================================================== */
+
+let currentJobId = null;
+let pollInterval = null;
+let currentPlaylistId = null;
+let allTracks = [];
+let activeFilter = 'all';
+
+// Selection state
+let selectMode = false;
+let selectedTracks = new Set();
+
+// ==============================
+// VIEW SWITCHING
+// ==============================
+function showView(view) {
+  document.getElementById('viewHome').style.display = view === 'home' ? 'block' : 'none';
+  document.getElementById('viewHistory').style.display = view === 'history' ? 'block' : 'none';
+  document.getElementById('navHome').classList.toggle('active', view === 'home');
+  document.getElementById('navHistory').classList.toggle('active', view === 'history');
+}
+
+// ==============================
+// CONVERSION FLOW
+// ==============================
+async function startConversion() {
+  const url = document.getElementById('playlistUrl').value.trim();
+  if (!url) {
+    showToast('Please paste a Spotify playlist URL', 'error');
+    return;
+  }
+
+  const btn = document.getElementById('convertBtn');
+  btn.disabled = true;
+  btn.querySelector('.btn-label').textContent = 'Starting...';
+
+  // Reset UI
+  document.getElementById('progressCard').style.display = 'block';
+  document.getElementById('resultsSection').style.display = 'none';
+  document.getElementById('liveFeed').innerHTML = '';
+  document.getElementById('progressBarFill').style.width = '0%';
+  document.getElementById('progressStatus').textContent = 'Connecting to Spotify...';
+  document.getElementById('progressCount').textContent = '';
+
+  try {
+    const res = await fetch('/api/process', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url })
+    });
+
+    if (res.status === 401) {
+      const data = await res.json();
+      document.getElementById('progressCard').style.display = 'none';
+      btn.disabled = false;
+      btn.querySelector('.btn-label').textContent = 'Convert';
+      showToast('Session expired — please reconnect Spotify', 'error');
+      setTimeout(() => { window.location.href = '/login'; }, 1500);
+      return;
+    }
+
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+
+    currentJobId = data.job_id;
+    allTracks = [];
+    pollProgress();
+  } catch (err) {
+    showToast(`Error: ${err.message}`, 'error');
+    document.getElementById('progressCard').style.display = 'none';
+    btn.disabled = false;
+    btn.querySelector('.btn-label').textContent = 'Convert';
+  }
+}
+
+
+function pollProgress() {
+  if (pollInterval) clearInterval(pollInterval);
+  pollInterval = setInterval(async () => {
+    try {
+      const res = await fetch(`/api/status/${currentJobId}`);
+      const job = await res.json();
+      updateProgress(job);
+
+      if (job.status === 'done' || job.status === 'error') {
+        clearInterval(pollInterval);
+        const btn = document.getElementById('convertBtn');
+        btn.disabled = false;
+        btn.querySelector('.btn-label').textContent = 'Convert';
+
+        if (job.status === 'done') {
+          showResults(job);
+          showToast(`✅ Done! Found ${job.tracks.filter(t => t.status === 'found').length} / ${job.total} songs`, 'success');
+        } else {
+          showToast(`Error: ${job.error}`, 'error');
+        }
+      }
+    } catch (e) {
+      console.error('Poll error:', e);
+    }
+  }, 1000);
+}
+
+function updateProgress(job) {
+  const statusMap = {
+    fetching_spotify: '🎵 Fetching playlist from Spotify...',
+    searching_ytmusic: '🔍 Searching YouTube Music...',
+    done: '✅ Complete!',
+    error: '❌ Error'
+  };
+
+  document.getElementById('progressStatus').textContent = statusMap[job.status] || job.status;
+
+  if (job.total > 0) {
+    document.getElementById('progressCount').textContent = `${job.progress} / ${job.total}`;
+    document.getElementById('progressBarFill').style.width = `${(job.progress / job.total) * 100}%`;
+  }
+
+  if (job.playlist_name) {
+    document.getElementById('progressPlaylistName').textContent = `📀 ${job.playlist_name}`;
+  }
+
+  // Append new live feed items
+  const feed = document.getElementById('liveFeed');
+  const newItems = job.tracks.slice(allTracks.length);
+  newItems.forEach(track => {
+    const item = document.createElement('div');
+    item.className = `feed-item ${track.status}`;
+    item.innerHTML = `
+      <span class="feed-icon">${track.status === 'found' ? '✅' : '❌'}</span>
+      <span class="feed-name">${escHtml(track.name)} – ${escHtml(track.artist_string)}</span>
+      <span class="feed-status">${track.status === 'found' ? 'Found' : 'Not found'}</span>
+    `;
+    feed.appendChild(item);
+    feed.scrollTop = feed.scrollHeight;
+  });
+  allTracks = [...job.tracks];
+}
+
+// ==============================
+// SHOW RESULTS
+// ==============================
+function showResults(job) {
+  currentPlaylistId = job.playlist_id;
+  const section = document.getElementById('resultsSection');
+  section.style.display = 'block';
+
+  const found = allTracks.filter(t => t.status === 'found').length;
+  document.getElementById('resultsTitle').textContent = job.playlist_name || 'Results';
+  document.getElementById('resultsSubtitle').textContent =
+    `${allTracks.length} tracks · ${found} found on YouTube Music · ${allTracks.length - found} not found`;
+
+  renderTracks(allTracks);
+  section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function renderTracks(tracks) {
+  const grid = document.getElementById('tracksGrid');
+  grid.innerHTML = '';
+
+  if (!tracks.length) {
+    grid.innerHTML = '<div class="empty-state"><div class="empty-icon">🎵</div><div class="empty-text">No tracks match your filter</div></div>';
+    return;
+  }
+
+  tracks.forEach((track, i) => {
+    const card = document.createElement('div');
+    card.className = 'track-card';
+    card.style.animationDelay = `${Math.min(i * 0.04, 1)}s`;
+
+    const artHtml = track.album_art
+      ? `<img src="${escHtml(track.album_art)}" class="track-art" alt="Album art" loading="lazy" />`
+      : `<div class="track-art-placeholder">🎵</div>`;
+
+    const checkboxHtml = `<div class="track-checkbox" style="display: ${selectMode ? 'block' : 'none'}; position: absolute; top: 10px; left: 10px; z-index: 10;">
+        <input type="checkbox" onchange="toggleTrackSelect(this, '${escHtml(track.youtube_music_url || track.youtube_url)}')" ${selectedTracks.has(track.youtube_music_url || track.youtube_url) ? 'checked' : ''} style="width: 20px; height: 20px; cursor: pointer;">
+      </div>`;
+
+    const spotifyBtn = track.spotify_url
+      ? `<a href="${escHtml(track.spotify_url)}" target="_blank" class="link-btn spotify">🎵 Spotify</a>`
+      : '';
+
+    const ytMusicBtn = track.youtube_music_url
+      ? `<a href="${escHtml(track.youtube_music_url)}" target="_blank" class="link-btn ytmusic">🎶 YT Music</a>`
+      : '';
+
+    const ytBtn = track.youtube_url
+      ? `<a href="${escHtml(track.youtube_url)}" target="_blank" class="link-btn youtube">▶ YouTube</a>`
+      : '';
+
+    const downloadBtn = (track.youtube_music_url || track.youtube_url)
+      ? `<button class="btn-outline btn-dl-track" onclick="downloadTrack('${escHtml(track.youtube_music_url || track.youtube_url)}', '${escHtml(track.name.replace(/'/g, "\\'"))}', '${escHtml(track.artist_string.replace(/'/g, "\\'"))}', this)">&#8659; Download</button>`
+      : '';
+
+    const ytMatch = track.yt_title
+      ? `<div class="yt-match">🔍 Matched: ${escHtml(track.yt_title)}</div>`
+      : '';
+
+    card.innerHTML = `
+      <div class="track-top">
+        ${checkboxHtml}
+        ${artHtml}
+        <div class="track-info">
+          <div class="track-name" title="${escHtml(track.name)}">${escHtml(track.name)}</div>
+          <div class="track-artist">${escHtml(track.artist_string)}</div>
+          <div class="track-duration">⏱ ${track.duration_str}</div>
+        </div>
+        <span class="track-status-badge ${track.status}">${track.status === 'found' ? '✅ Found' : '❌ Not found'}</span>
+      </div>
+      <div class="track-links">
+        ${spotifyBtn}
+        ${ytMusicBtn}
+        ${ytBtn}
+        ${downloadBtn}
+      </div>
+      ${ytMatch}
+    `;
+    grid.appendChild(card);
+  });
+}
+
+// ==============================
+// FILTER & SELECTION
+// ==============================
+function toggleSelectMode() {
+  selectMode = !selectMode;
+  const btn = document.getElementById('toggleSelectBtn');
+  btn.classList.toggle('active', selectMode);
+  btn.textContent = selectMode ? 'Done Selecting' : '✓ Select';
+  
+  if (!selectMode) {
+    selectedTracks.clear();
+  }
+  
+  updateSelectUI();
+  renderTracks(allTracks); // re-render to show/hide checkboxes
+}
+
+function toggleTrackSelect(checkbox, ytUrl) {
+  if (checkbox.checked) {
+    selectedTracks.add(ytUrl);
+  } else {
+    selectedTracks.delete(ytUrl);
+  }
+  updateSelectUI();
+}
+
+function updateSelectUI() {
+  const btn = document.getElementById('downloadSelectedBtn');
+  if (selectMode && selectedTracks.size > 0) {
+    btn.style.display = 'inline-block';
+    btn.textContent = `⬇ Download Selected (${selectedTracks.size})`;
+  } else {
+    btn.style.display = 'none';
+  }
+}
+
+function setFilter(filter, btn) {
+  activeFilter = filter;
+  document.querySelectorAll('.filter-tag').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  applyFilters();
+}
+
+function filterTracks() {
+  applyFilters();
+}
+
+function applyFilters() {
+  const query = document.getElementById('searchFilter').value.toLowerCase();
+  let filtered = allTracks;
+
+  if (activeFilter === 'found') filtered = filtered.filter(t => t.status === 'found');
+  if (activeFilter === 'not_found') filtered = filtered.filter(t => t.status === 'not_found');
+
+  if (query) {
+    filtered = filtered.filter(t =>
+      t.name.toLowerCase().includes(query) ||
+      t.artist_string.toLowerCase().includes(query)
+    );
+  }
+  renderTracks(filtered);
+}
+
+// ==============================
+// HISTORY / PLAYLISTS
+// ==============================
+async function loadPlaylist(playlistId) {
+  showView('home');
+  currentPlaylistId = playlistId;
+  document.getElementById('progressCard').style.display = 'none';
+
+  const res = await fetch(`/api/playlists/${playlistId}`);
+  const data = await res.json();
+  const playlist = data.playlist;
+  const tracks = data.tracks;
+
+  // Map DB format to display format
+  allTracks = tracks.map(t => ({
+    name: t.track_name,
+    artist_string: t.artists.join(', '),
+    album_art: t.album_art,
+    duration_str: t.duration_str,
+    spotify_url: t.spotify_url,
+    youtube_music_url: t.youtube_music_url,
+    youtube_url: t.youtube_url,
+    yt_title: t.yt_title,
+    yt_thumbnail: t.yt_thumbnail,
+    status: t.status,
+  }));
+
+  const found = allTracks.filter(t => t.status === 'found').length;
+  document.getElementById('resultsTitle').textContent = playlist.playlist_name;
+  document.getElementById('resultsSubtitle').textContent =
+    `${allTracks.length} tracks · ${found} found on YouTube Music`;
+
+  document.getElementById('resultsSection').style.display = 'block';
+  renderTracks(allTracks);
+  document.getElementById('resultsSection').scrollIntoView({ behavior: 'smooth' });
+}
+
+async function deletePlaylist(playlistId, btn) {
+  if (!confirm('Delete this playlist?')) return;
+  await fetch(`/api/playlists/${playlistId}/delete`, { method: 'DELETE' });
+  btn.closest('.playlist-card').remove();
+  showToast('Playlist deleted', 'info');
+}
+
+// ==============================
+// DOWNLOADS
+// ==============================
+async function downloadTrack(url, title, artist, btn) {
+  const quality = document.getElementById('qualitySelect').value;
+  btn.disabled = true;
+  const originalText = btn.innerHTML;
+  btn.innerHTML = '⏳...';
+  
+  try {
+    const params = new URLSearchParams({ url, title, artist, quality });
+    const response = await fetch(`/api/download/track?${params}`);
+    
+    if (!response.ok) {
+      const err = await response.json();
+      throw new Error(err.error || 'Download failed');
+    }
+    
+    const blob = await response.blob();
+    const downloadUrl = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = downloadUrl;
+    
+    const contentDisposition = response.headers.get('Content-Disposition');
+    let filename = `${artist} - ${title}.m4a`;
+    if (contentDisposition && contentDisposition.indexOf('filename=') !== -1) {
+      const matches = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/.exec(contentDisposition);
+      if (matches != null && matches[1]) {
+        filename = matches[1].replace(/['"]/g, '');
+      }
+    }
+    
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(downloadUrl);
+    a.remove();
+    
+    btn.innerHTML = '✅ Done';
+    setTimeout(() => { btn.innerHTML = originalText; btn.disabled = false; }, 3000);
+  } catch (err) {
+    showToast(`Download error: ${err.message}`, 'error');
+    btn.innerHTML = '❌ Error';
+    setTimeout(() => { btn.innerHTML = originalText; btn.disabled = false; }, 3000);
+  }
+}
+
+let dlPollInterval = null;
+
+async function downloadAll() {
+  if (!currentPlaylistId) return;
+  startBatchDownload(currentPlaylistId, null);
+}
+
+async function downloadSelected() {
+  if (!currentPlaylistId || selectedTracks.size === 0) return;
+  startBatchDownload(currentPlaylistId, Array.from(selectedTracks));
+}
+
+async function startBatchDownload(playlistId, selectedUrls) {
+  const quality = document.getElementById('qualitySelect').value;
+  const btn = selectedUrls ? document.getElementById('downloadSelectedBtn') : document.getElementById('downloadAllBtn');
+  btn.disabled = true;
+  
+  try {
+    const payload = { quality };
+    if (selectedUrls) payload.selected_urls = selectedUrls;
+
+    const res = await fetch(`/api/download/playlist/${playlistId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    
+    const jobId = data.job_id;
+    document.getElementById('dlModal').style.display = 'flex';
+    document.getElementById('dlProgressFill').style.width = '0%';
+    document.getElementById('dlModalStats').textContent = `0 / ${data.total} tracks`;
+    document.getElementById('dlModalEta').textContent = 'ETA: calculating...';
+    document.getElementById('dlModalFolder').textContent = 'Starting download...';
+    
+    if (dlPollInterval) clearInterval(dlPollInterval);
+    dlPollInterval = setInterval(() => pollDownloadJob(jobId, btn), 1000);
+  } catch (err) {
+    showToast(`Error: ${err.message}`, 'error');
+    btn.disabled = false;
+  }
+}
+
+function formatEta(seconds) {
+  if (seconds == null || isNaN(seconds)) return 'calculating...';
+  if (seconds === 0) return 'done';
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${s}s`;
+}
+
+async function pollDownloadJob(jobId, btn) {
+  try {
+    const res = await fetch(`/api/download/status/${jobId}`);
+    const job = await res.json();
+    
+    if (job.total > 0) {
+      document.getElementById('dlModalStats').textContent = `${job.progress} / ${job.total} tracks`;
+      document.getElementById('dlProgressFill').style.width = `${(job.progress / job.total) * 100}%`;
+    }
+
+    document.getElementById('dlModalEta').textContent = `ETA: ${formatEta(job.eta_seconds)}`;
+
+    if (job.folder) {
+      document.getElementById('dlModalFolder').textContent = `Saving to: ${job.folder}`;
+    }
+    
+    if (job.status === 'done' || job.status === 'error') {
+      clearInterval(dlPollInterval);
+      btn.disabled = false;
+      if (job.status === 'done') {
+        document.getElementById('dlModalStats').textContent = `${job.total} / ${job.total} tracks \u2014 Done!`;
+        document.getElementById('dlModalEta').textContent = 'Finished';
+        document.getElementById('dlModal').querySelector('.dl-modal-title').textContent = '\u2705 Download Complete!';
+        if (job.folder) {
+          document.getElementById('dlModalFolder').textContent = `\ud83d\udcc2 Saved to: ${job.folder}`;
+        }
+        showToast('\u2705 All songs downloaded!', 'success');
+        if (selectMode) toggleSelectMode();
+      } else {
+        showToast(`Error: ${job.error}`, 'error');
+      }
+    }
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+
+function closeDlModal() {
+  document.getElementById('dlModal').style.display = 'none';
+}
+
+// ==============================
+// EXPORT
+// ==============================
+function exportCSV() {
+  if (!currentPlaylistId) return;
+  window.open(`/api/playlists/${currentPlaylistId}/export/csv`, '_blank');
+}
+
+function exportJSON() {
+  if (!currentPlaylistId) return;
+  window.open(`/api/playlists/${currentPlaylistId}/export/json`, '_blank');
+}
+
+function exportCSVById(id) {
+  window.open(`/api/playlists/${id}/export/csv`, '_blank');
+}
+
+// ==============================
+// TOAST
+// ==============================
+function showToast(message, type = 'info') {
+  let container = document.querySelector('.toast-container');
+  if (!container) {
+    container = document.createElement('div');
+    container.className = 'toast-container';
+    document.body.appendChild(container);
+  }
+  const toast = document.createElement('div');
+  toast.className = `toast ${type}`;
+  toast.textContent = message;
+  container.appendChild(toast);
+  setTimeout(() => toast.remove(), 4000);
+}
+
+// ==============================
+// UTILS
+// ==============================
+function escHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+// Allow pressing Enter to convert
+document.addEventListener('DOMContentLoaded', () => {
+  const urlInput = document.getElementById('playlistUrl');
+  if (urlInput) {
+    urlInput.addEventListener('keydown', e => {
+      if (e.key === 'Enter') startConversion();
+    });
+  }
+});
