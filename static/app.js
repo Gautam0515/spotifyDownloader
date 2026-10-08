@@ -337,42 +337,14 @@ async function downloadTrack(url, title, artist, btn) {
   const originalText = btn.innerHTML;
   btn.innerHTML = '⏳...';
   
-  try {
-    const params = new URLSearchParams({ url, title, artist, quality });
-    const response = await fetch(`/api/download/track?${params}`);
-    
-    if (!response.ok) {
-      const err = await response.json();
-      throw new Error(err.error || 'Download failed');
-    }
-    
-    const blob = await response.blob();
-    const downloadUrl = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = downloadUrl;
-    
-    const contentDisposition = response.headers.get('Content-Disposition');
-    let filename = `${artist} - ${title}.m4a`;
-    if (contentDisposition && contentDisposition.indexOf('filename=') !== -1) {
-      const matches = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/.exec(contentDisposition);
-      if (matches != null && matches[1]) {
-        filename = matches[1].replace(/['"]/g, '');
-      }
-    }
-    
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    window.URL.revokeObjectURL(downloadUrl);
-    a.remove();
-    
-    btn.innerHTML = '✅ Done';
-    setTimeout(() => { btn.innerHTML = originalText; btn.disabled = false; }, 3000);
-  } catch (err) {
-    showToast(`Download error: ${err.message}`, 'error');
-    btn.innerHTML = '❌ Error';
-    setTimeout(() => { btn.innerHTML = originalText; btn.disabled = false; }, 3000);
-  }
+  const params = new URLSearchParams({ url, title, artist, quality });
+  const downloadUrl = `/api/download/track?${params}`;
+  
+  // Native browser download (works best on iOS/Android)
+  window.location.href = downloadUrl;
+  
+  setTimeout(() => { btn.innerHTML = '✅ Done'; }, 1000);
+  setTimeout(() => { btn.innerHTML = originalText; btn.disabled = false; }, 3000);
 }
 
 let dlPollInterval = null;
@@ -452,9 +424,13 @@ async function pollDownloadJob(jobId, btn) {
         document.getElementById('dlModalEta').textContent = 'Finished';
         document.getElementById('dlModal').querySelector('.dl-modal-title').textContent = '\u2705 Download Complete!';
         if (job.folder) {
-          document.getElementById('dlModalFolder').textContent = `\ud83d\udcc2 Saved to: ${job.folder}`;
+          document.getElementById('dlModalFolder').textContent = `\ud83d\udcc2 Preparing ZIP file...`;
         }
-        showToast('\u2705 All songs downloaded!', 'success');
+        showToast('\u2705 Downloading your songs...', 'success');
+        
+        // Trigger native download of the ZIP file
+        window.location.href = `/api/download/zip/${jobId}`;
+        
         if (selectMode) toggleSelectMode();
       } else {
         showToast(`Error: ${job.error}`, 'error');

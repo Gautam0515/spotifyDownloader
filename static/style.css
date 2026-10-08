@@ -957,14 +957,61 @@ body {
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 
 /* ===========================
-   RESPONSIVE
+   RESPONSIVE (Mobile)
    =========================== */
-@media (max-width: 600px) {
-  .hero { padding: 50px 16px 40px; }
-  .hero-title { font-size: 36px; letter-spacing: -1px; }
-  .input-row { flex-wrap: wrap; }
-  .btn-primary { width: 100%; justify-content: center; }
-  .tracks-grid { grid-template-columns: 1fr; }
-  .results-header { flex-direction: column; }
-  .filter-bar { flex-direction: column; align-items: stretch; }
+@media (max-width: 768px) {
+  .hero { padding: 40px 16px 30px; }
+  .hero-title { font-size: 32px; letter-spacing: -1px; }
+  
+  .input-row { flex-direction: column; gap: 12px; }
+  .input-wrapper { width: 100%; }
+  .url-input { width: 100%; }
+  .btn-primary { width: 100%; justify-content: center; padding: 14px; }
+  
+  .tracks-grid { grid-template-columns: 1fr; gap: 12px; }
+  
+  .results-header { flex-direction: column; gap: 16px; align-items: flex-start; }
+  
+  .filter-bar { 
+    flex-direction: column; 
+    align-items: stretch; 
+    width: 100%;
+    gap: 12px;
+  }
+  .filter-group { flex-wrap: wrap; justify-content: flex-start; }
+  .filter-search { width: 100%; max-width: 100%; }
+  .search-input { width: 100%; }
+  
+  /* Track Card Fixes */
+  .track-card { padding: 12px; }
+  .track-art { width: 50px; height: 50px; }
+  .track-art-placeholder { width: 50px; height: 50px; }
+  .track-name { font-size: 14px; }
+  .track-artist { font-size: 12px; }
+  
+  .track-links { 
+    flex-wrap: wrap; 
+    gap: 8px; 
+    margin-top: 12px;
+  }
+  .link-btn, .btn-dl-track { 
+    flex: 1 1 calc(50% - 4px); 
+    text-align: center; 
+    justify-content: center; 
+    padding: 8px 10px;
+    font-size: 12px;
+  }
+  
+  /* Download Bar */
+  .dl-bar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+    margin-top: 16px;
+  }
+  .quality-select { width: 100%; margin-right: 0; }
+  .btn-download-all, #downloadSelectedBtn { width: 100%; text-align: center; }
+  
+  /* Modal Fixes */
+  .dl-modal-inner { width: 95%; padding: 20px; }
 }

@@ -171,20 +171,19 @@ def _playlist_download_worker(job_id: str, tracks: list, folder_name: str, quali
         remaining_tracks = total - (i + 1)
         download_jobs[job_id]["eta_seconds"] = int(avg_time_per_track * remaining_tracks)
 
-    # --- ZIP creation is disabled (songs saved directly to playlist folder) ---
-    # safe_folder = _sanitize(folder_name)
-    # zip_path = os.path.join(DOWNLOADS_DIR, f"{safe_folder}.zip")
-    # try:
-    #     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-    #         for root, dirs, files in os.walk(playlist_dir):
-    #             for file in files:
-    #                 file_path = os.path.join(root, file)
-    #                 zf.write(file_path, arcname=file)
-    #     shutil.rmtree(playlist_dir, ignore_errors=True)
-    #     download_jobs[job_id]["zip_path"] = zip_path
-    #     download_jobs[job_id]["zip_name"] = f"{safe_folder}.zip"
-    # except Exception as e:
-    #     download_jobs[job_id]["error"] = f"Zipping failed: {e}"
+    safe_folder = _sanitize(playlist_name)
+    zip_path = os.path.join(DOWNLOADS_DIR, f"{safe_folder}.zip")
+    try:
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+            for root, dirs, files in os.walk(playlist_dir):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    zf.write(file_path, arcname=file)
+        shutil.rmtree(playlist_dir, ignore_errors=True)
+        download_jobs[job_id]["zip_path"] = zip_path
+        download_jobs[job_id]["zip_name"] = f"{safe_folder}.zip"
+    except Exception as e:
+        download_jobs[job_id]["error"] = f"Zipping failed: {e}"
 
     download_jobs[job_id]["status"] = "done"
 
