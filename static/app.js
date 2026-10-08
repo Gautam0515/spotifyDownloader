@@ -405,6 +405,14 @@ async function pollDownloadJob(jobId, btn) {
     const res = await fetch(`/api/download/status/${jobId}`);
     const job = await res.json();
     
+    if (job.error && !job.status) {
+      clearInterval(dlPollInterval);
+      if (btn) btn.disabled = false;
+      showToast(`Download failed: Server disconnected or restarted.`, 'error');
+      closeDlModal();
+      return;
+    }
+
     if (job.total > 0) {
       document.getElementById('dlModalStats').textContent = `${job.progress} / ${job.total} tracks`;
       document.getElementById('dlProgressFill').style.width = `${(job.progress / job.total) * 100}%`;
