@@ -1,0 +1,6 @@
+.env
+.spotify_cache
+playlists.db
+downloads/
+__pycache__/
+*.pyc
