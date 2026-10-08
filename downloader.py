@@ -19,7 +19,7 @@ except ImportError:
     FFMPEG_PATH = shutil.which("ffmpeg")
 
 import time
-if os.environ.get("VERCEL"):
+if os.environ.get("VERCEL") or os.environ.get("RENDER"):
     DOWNLOADS_DIR = "/tmp/downloads"
 else:
     DOWNLOADS_DIR = os.path.join(os.path.expanduser("~"), "Downloads")

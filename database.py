@@ -4,7 +4,7 @@ import json
 import os
 from datetime import datetime
 
-if os.environ.get("VERCEL"):
+if os.environ.get("VERCEL") or os.environ.get("RENDER"):
     DB_PATH = "/tmp/playlists.db"
 else:
     DB_PATH = os.path.join(os.path.dirname(__file__), "playlists.db")
