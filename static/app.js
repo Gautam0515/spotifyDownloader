@@ -18,8 +18,11 @@ let selectedTracks = new Set();
 function showView(view) {
   document.getElementById('viewHome').style.display = view === 'home' ? 'block' : 'none';
   document.getElementById('viewHistory').style.display = view === 'history' ? 'block' : 'none';
+  document.getElementById('viewSettings').style.display = view === 'settings' ? 'block' : 'none';
   document.getElementById('navHome').classList.toggle('active', view === 'home');
   document.getElementById('navHistory').classList.toggle('active', view === 'history');
+  document.getElementById('navSettings').classList.toggle('active', view === 'settings');
+  if (view === 'settings') checkCookieStatus();
 }
 
 // ==============================
@@ -528,4 +531,73 @@ document.addEventListener('DOMContentLoaded', () => {
       if (e.key === 'Enter') startConversion();
     });
   }
+  // Check cookie status on load
+  checkCookieStatus();
 });
+
+// ==============================
+// SETTINGS — COOKIES
+// ==============================
+async function checkCookieStatus() {
+  try {
+    const res = await fetch('/api/cookies/status');
+    const data = await res.json();
+    const badge = document.getElementById('cookieStatusBadge');
+    const deleteBtn = document.getElementById('deleteCookieBtn');
+    if (data.has_cookies) {
+      badge.textContent = '✅ Cookies Active';
+      badge.style.background = 'rgba(29,185,84,0.15)';
+      badge.style.color = '#1db954';
+      badge.style.border = '1px solid #1db954';
+      if (deleteBtn) deleteBtn.style.display = 'inline-block';
+    } else {
+      badge.textContent = '⚠️ No Cookies';
+      badge.style.background = 'rgba(255,107,107,0.15)';
+      badge.style.color = '#ff6b6b';
+      badge.style.border = '1px solid #ff6b6b';
+      if (deleteBtn) deleteBtn.style.display = 'none';
+    }
+  } catch (e) {
+    console.error('Cookie status check failed:', e);
+  }
+}
+
+async function uploadCookies(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const statusEl = document.getElementById('cookieUploadStatus');
+  statusEl.textContent = '⏳ Uploading...';
+  statusEl.style.color = '#aaa';
+
+  const formData = new FormData();
+  formData.append('cookies', file);
+
+  try {
+    const res = await fetch('/api/cookies/upload', { method: 'POST', body: formData });
+    const data = await res.json();
+    if (data.ok) {
+      statusEl.textContent = '✅ ' + data.message;
+      statusEl.style.color = '#1db954';
+      showToast('✅ YouTube cookies saved! Downloads will now work.', 'success');
+      checkCookieStatus();
+    } else {
+      statusEl.textContent = '❌ ' + (data.error || 'Upload failed');
+      statusEl.style.color = '#ff6b6b';
+      showToast('❌ ' + (data.error || 'Upload failed'), 'error');
+    }
+  } catch (e) {
+    statusEl.textContent = '❌ Network error during upload';
+    statusEl.style.color = '#ff6b6b';
+  }
+  // Reset file input so same file can be re-uploaded
+  input.value = '';
+}
+
+async function deleteCookies() {
+  if (!confirm('Remove saved YouTube cookies?')) return;
+  await fetch('/api/cookies/delete', { method: 'DELETE' });
+  showToast('🗑 Cookies removed', 'info');
+  checkCookieStatus();
+  const statusEl = document.getElementById('cookieUploadStatus');
+  if (statusEl) statusEl.textContent = '';
+}

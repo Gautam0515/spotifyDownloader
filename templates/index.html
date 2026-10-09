@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/style.css?v=4" />
+  <link rel="stylesheet" href="/static/style.css?v=5" />
 </head>
 <body>
   <div class="bg-orbs">
@@ -27,6 +27,7 @@
       <nav class="nav">
         <button class="nav-btn active" id="navHome" onclick="showView('home')">Home</button>
         <button class="nav-btn" id="navHistory" onclick="showView('history')">My Playlists</button>
+        <button class="nav-btn" id="navSettings" onclick="showView('settings')">⚙️ Settings</button>
       </nav>
     </div>
   </header>
@@ -160,6 +161,59 @@
     </div>
   </main>
 
-  <script src="/static/app.js?v=4"></script>
+  <!-- ===== SETTINGS VIEW ===== -->
+  <main id="viewSettings" class="view" style="display:none">
+    <div class="page-header">
+      <h2 class="page-title">⚙️ Settings</h2>
+      <p class="page-subtitle">Configure the app for downloading from YouTube Music</p>
+    </div>
+
+    <!-- YouTube Cookies Card -->
+    <div class="settings-card">
+      <div class="settings-card-header">
+        <div class="settings-card-icon">🍪</div>
+        <div>
+          <div class="settings-card-title">YouTube Cookies</div>
+          <div class="settings-card-subtitle">Required for downloading on cloud servers (Render/Vercel) — YouTube blocks server IPs without browser cookies</div>
+        </div>
+        <div class="cookie-status-badge" id="cookieStatusBadge">Checking...</div>
+      </div>
+
+      <div class="settings-steps">
+        <div class="settings-step">
+          <div class="step-num">1</div>
+          <div class="step-text">Install the <strong>"Get cookies.txt LOCALLY"</strong> browser extension (<a href="https://chrome.google.com/webstore/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc" target="_blank" style="color:var(--green)">Chrome</a> / <a href="https://addons.mozilla.org/en-US/firefox/addon/get-cookies-txt-locally/" target="_blank" style="color:var(--green)">Firefox</a>)</div>
+        </div>
+        <div class="settings-step">
+          <div class="step-num">2</div>
+          <div class="step-text">Open <a href="https://music.youtube.com" target="_blank" style="color:var(--green)">music.youtube.com</a> and make sure you are <strong>logged into your Google account</strong></div>
+        </div>
+        <div class="settings-step">
+          <div class="step-num">3</div>
+          <div class="step-text">Click the extension icon → click <strong>"Export as cookies.txt"</strong> → save the file</div>
+        </div>
+        <div class="settings-step">
+          <div class="step-num">4</div>
+          <div class="step-text">Upload that file below. Your cookies are stored securely on the server and never shared.</div>
+        </div>
+      </div>
+
+      <div class="cookie-upload-zone" id="cookieUploadZone">
+        <input type="file" id="cookieFileInput" accept=".txt,text/plain" style="display:none" onchange="uploadCookies(this)" />
+        <div class="upload-icon">📄</div>
+        <div class="upload-label">Drag & drop your <code>cookies.txt</code> here</div>
+        <div class="upload-hint">or</div>
+        <button class="btn-primary" onclick="document.getElementById('cookieFileInput').click()">Browse File</button>
+      </div>
+
+      <div id="cookieUploadStatus" style="margin-top:12px; font-size:0.9rem; text-align:center;"></div>
+
+      <div style="text-align:center; margin-top:12px;">
+        <button class="btn-outline" id="deleteCookieBtn" onclick="deleteCookies()" style="display:none; color:#ff6b6b; border-color:#ff6b6b;">🗑 Remove Saved Cookies</button>
+      </div>
+    </div>
+  </main>
+
+  <script src="/static/app.js?v=5"></script>
 </body>
 </html>

@@ -8,7 +8,7 @@ from flask import Flask, render_template, request, jsonify, Response, send_file
 from database import init_db, save_playlist, save_track, get_all_playlists, get_playlist_tracks, get_playlist_by_id, delete_playlist
 from spotify_reader import get_playlist_tracks as fetch_spotify_tracks
 from ytmusic_searcher import search_youtube_music
-from downloader import download_single, start_playlist_download, ffmpeg_available, download_jobs, DOWNLOADS_DIR
+from downloader import download_single, start_playlist_download, ffmpeg_available, download_jobs, DOWNLOADS_DIR, COOKIE_FILE
 
 app = Flask(__name__)
 init_db()
@@ -130,6 +130,41 @@ def api_delete_playlist(playlist_id):
 @app.route("/api/ffmpeg-status")
 def api_ffmpeg_status():
     return jsonify({"ffmpeg": ffmpeg_available()})
+
+
+@app.route("/api/cookies/status")
+def api_cookies_status():
+    """Check if a cookies.txt file has been uploaded."""
+    has_cookies = os.path.isfile(COOKIE_FILE) and os.path.getsize(COOKIE_FILE) > 10
+    return jsonify({"has_cookies": has_cookies})
+
+
+@app.route("/api/cookies/upload", methods=["POST"])
+def api_cookies_upload():
+    """Accept a cookies.txt file upload and save it for yt-dlp to use."""
+    if "cookies" not in request.files:
+        return jsonify({"error": "No file uploaded"}), 400
+    f = request.files["cookies"]
+    if not f.filename:
+        return jsonify({"error": "Empty filename"}), 400
+    content = f.read().decode("utf-8", errors="ignore")
+    # Basic sanity check — a Netscape cookie file starts with a known header
+    if "HTTP Cookie File" not in content and "Netscape HTTP Cookie" not in content and "# Netscape" not in content:
+        # Still allow it if it has youtube domains
+        if "youtube.com" not in content and "google.com" not in content:
+            return jsonify({"error": "File does not look like a YouTube cookies.txt — make sure to export from YouTube Music"}), 400
+    with open(COOKIE_FILE, "w", encoding="utf-8") as out:
+        out.write(content)
+    print(f"[app] Cookies file saved to {COOKIE_FILE} ({len(content)} bytes)")
+    return jsonify({"ok": True, "message": "Cookies saved! Downloads should now work."})
+
+
+@app.route("/api/cookies/delete", methods=["DELETE"])
+def api_cookies_delete():
+    """Remove the saved cookies file."""
+    if os.path.isfile(COOKIE_FILE):
+        os.remove(COOKIE_FILE)
+    return jsonify({"ok": True})
 
 
 @app.route("/api/download/track")

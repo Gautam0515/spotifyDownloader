@@ -35,6 +35,17 @@ else:
 os.makedirs(DOWNLOADS_DIR, exist_ok=True)
 print(f"[downloader] DOWNLOADS_DIR = {DOWNLOADS_DIR} (exists={os.path.isdir(DOWNLOADS_DIR)})")
 
+# Path where the uploaded YouTube cookies.txt file is stored
+COOKIE_FILE = os.path.join(_BASE_DIR, "youtube_cookies.txt")
+
+
+def _get_cookie_file() -> str | None:
+    """Return the cookie file path if it exists, otherwise None."""
+    if os.path.isfile(COOKIE_FILE) and os.path.getsize(COOKIE_FILE) > 10:
+        print(f"[downloader] Using cookie file: {COOKIE_FILE}")
+        return COOKIE_FILE
+    return None
+
 
 # In-memory download job tracker (dict is shared because we force 1 gunicorn worker)
 download_jobs: dict = {}
@@ -65,13 +76,18 @@ def _build_ydl_opts(out_template: str, quality: str, use_ffmpeg: bool) -> tuple:
     """
     base = {
         "outtmpl": out_template,
-        "quiet": False,         # Enable output so Render logs show what yt-dlp is doing
+        "quiet": False,
         "no_warnings": False,
         "nooverwrites": False,
         "extractor_args": {"youtube": {"player_client": ["android", "web"]}},
     }
     if FFMPEG_PATH:
         base["ffmpeg_location"] = FFMPEG_PATH
+
+    # Attach cookies if available — bypasses YouTube bot detection on server IPs
+    cookie_file = _get_cookie_file()
+    if cookie_file:
+        base["cookiefile"] = cookie_file
 
     if quality.startswith("mp3") and use_ffmpeg:
         bitrate = "320" if quality == "mp3" else "192"

@@ -1015,3 +1015,109 @@ body {
   /* Modal Fixes */
   .dl-modal-inner { width: 95%; padding: 20px; }
 }
+
+/* ==============================
+   SETTINGS PAGE
+   ============================== */
+.settings-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 28px;
+  max-width: 680px;
+  margin: 0 auto 28px auto;
+}
+
+.settings-card-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.settings-card-icon {
+  font-size: 2.2rem;
+  flex-shrink: 0;
+}
+
+.settings-card-title {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.settings-card-subtitle {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  margin-top: 4px;
+  line-height: 1.5;
+}
+
+.cookie-status-badge {
+  margin-left: auto;
+  flex-shrink: 0;
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  background: rgba(255,255,255,0.07);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.settings-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-bottom: 24px;
+}
+
+.settings-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.step-num {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--green), var(--blue));
+  color: white;
+  font-size: 0.8rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.step-text {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.step-text strong { color: var(--text-primary); }
+
+.cookie-upload-zone {
+  border: 2px dashed var(--border);
+  border-radius: 14px;
+  padding: 32px 20px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.cookie-upload-zone:hover {
+  border-color: var(--green);
+  background: rgba(29,185,84,0.05);
+}
+
+.upload-icon { font-size: 2.5rem; margin-bottom: 10px; }
+.upload-label { font-size: 0.95rem; color: var(--text-primary); margin-bottom: 6px; }
+.upload-label code { background: rgba(255,255,255,0.08); padding: 2px 7px; border-radius: 5px; font-size: 0.88rem; }
+.upload-hint { font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 14px; }
+
