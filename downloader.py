@@ -5,12 +5,14 @@ Downloads audio from YouTube Music URLs using yt-dlp.
 Supports MP3 (requires ffmpeg) and best-quality M4A/WebM (no ffmpeg needed).
 """
 
+from __future__ import annotations
 import os
 import shutil
 import threading
 import zipfile
 import time
 import traceback
+from typing import Optional
 import yt_dlp
 
 try:
@@ -39,7 +41,7 @@ print(f"[downloader] DOWNLOADS_DIR = {DOWNLOADS_DIR} (exists={os.path.isdir(DOWN
 COOKIE_FILE = os.path.join(_BASE_DIR, "youtube_cookies.txt")
 
 
-def _get_cookie_file() -> str | None:
+def _get_cookie_file() -> Optional[str]:
     """Return the cookie file path if it exists, otherwise None."""
     if os.path.isfile(COOKIE_FILE) and os.path.getsize(COOKIE_FILE) > 10:
         print(f"[downloader] Using cookie file: {COOKIE_FILE}")

@@ -3,6 +3,7 @@ import sqlite3
 import json
 import os
 from datetime import datetime
+from typing import Optional
 
 if os.environ.get("VERCEL") or os.environ.get("RENDER"):
     DB_PATH = "/tmp/playlists.db"
@@ -78,7 +79,7 @@ def save_playlist(spotify_url: str, meta: dict) -> int:
     return playlist_id
 
 
-def save_track(playlist_id: int, track: dict, yt_result: dict | None):
+def save_track(playlist_id: int, track: dict, yt_result: Optional[dict]):
     conn = get_conn()
     c = conn.cursor()
 
@@ -138,7 +139,7 @@ def get_playlist_tracks(playlist_id: int) -> list:
     return rows
 
 
-def get_playlist_by_id(playlist_id: int) -> dict | None:
+def get_playlist_by_id(playlist_id: int) -> Optional[dict]:
     conn = get_conn()
     c = conn.cursor()
     c.execute("SELECT * FROM playlists WHERE id = ?", (playlist_id,))
