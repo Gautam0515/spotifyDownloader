@@ -194,7 +194,11 @@ function renderTracks(tracks) {
       : '';
 
     const downloadBtn = (track.youtube_music_url || track.youtube_url)
-      ? `<button class="btn-outline btn-dl-track" onclick="downloadTrack('${escHtml(track.youtube_music_url || track.youtube_url)}', '${escHtml(track.name.replace(/'/g, "\\'"))}', '${escHtml(track.artist_string.replace(/'/g, "\\'"))}', this)">&#8659; Download</button>`
+      ? `<button class="btn-outline btn-dl-track" onclick="downloadTrack('${escHtml(track.youtube_music_url || track.youtube_url)}', '${escHtml(track.name.replace(/'/g, "\\'" ))}', '${escHtml(track.artist_string.replace(/'/g, "\\'" ))}', this)">&#8659; Save to Server</button>`
+      : '';
+
+    const streamBtn = (track.youtube_music_url || track.youtube_url)
+      ? `<button class="btn-stream btn-dl-track" onclick="streamTrack('${escHtml(track.youtube_music_url || track.youtube_url)}', '${escHtml(track.name.replace(/'/g, "\\'" ))}', '${escHtml(track.artist_string.replace(/'/g, "\\'" ))}', this)">📥 Direct Download</button>`
       : '';
 
     const ytMatch = track.yt_title
@@ -217,6 +221,7 @@ function renderTracks(tracks) {
         ${ytMusicBtn}
         ${ytBtn}
         ${downloadBtn}
+        ${streamBtn}
       </div>
       ${ytMatch}
     `;
@@ -354,6 +359,64 @@ async function downloadTrack(url, title, artist, btn) {
   
   setTimeout(() => { btn.innerHTML = '✅ Done'; }, 2000);
   setTimeout(() => { btn.innerHTML = originalText; btn.disabled = false; }, 4000);
+}
+
+async function streamTrack(url, title, artist, btn) {
+  /**
+   * Direct-to-browser download:
+   * The server fetches the song via yt-dlp, pipes it straight to the
+   * browser, and deletes the temp file. The user gets the file directly.
+   */
+  const quality = document.getElementById('qualitySelect').value;
+  btn.disabled = true;
+  const originalText = btn.innerHTML;
+  btn.innerHTML = '⏳ Fetching...';
+  btn.style.opacity = '0.7';
+
+  showToast('⏳ Fetching song from YouTube... this may take 5–20s', 'info');
+
+  const params = new URLSearchParams({ url, title, artist, quality });
+  const streamUrl = `/api/stream/track?${params}`;
+
+  try {
+    // Fetch the response as a blob — this keeps the user on the page
+    const res = await fetch(streamUrl);
+
+    if (!res.ok) {
+      let errMsg = 'Download failed';
+      try { const d = await res.json(); errMsg = d.error || errMsg; } catch(_) {}
+      throw new Error(errMsg);
+    }
+
+    // Read the audio blob
+    const blob = await res.blob();
+    const contentDisp = res.headers.get('Content-Disposition') || '';
+    let filename = `${title} - ${artist}.m4a`;
+    const match = contentDisp.match(/filename="?([^"]+)"?/);
+    if (match) filename = match[1];
+
+    // Trigger native browser save dialog
+    const objUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = objUrl;
+    a.download = filename;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(objUrl); }, 2000);
+
+    btn.innerHTML = '✅ Downloaded!';
+    btn.style.opacity = '1';
+    showToast(`✅ '${title}' downloaded to your device!`, 'success');
+    setTimeout(() => { btn.innerHTML = originalText; btn.disabled = false; }, 3000);
+
+  } catch (err) {
+    btn.innerHTML = '❌ Failed';
+    btn.style.opacity = '1';
+    btn.style.borderColor = '#ff6b6b';
+    showToast(`❌ ${err.message}`, 'error');
+    setTimeout(() => { btn.innerHTML = originalText; btn.disabled = false; btn.style.borderColor = ''; }, 3000);
+  }
 }
 
 let dlPollInterval = null;

@@ -2,13 +2,14 @@ import json
 import csv
 import io
 import os
+import shutil
 import threading
 import uuid
 from flask import Flask, render_template, request, jsonify, Response, send_file
 from database import init_db, save_playlist, save_track, get_all_playlists, get_playlist_tracks, get_playlist_by_id, delete_playlist
 from spotify_reader import get_playlist_tracks as fetch_spotify_tracks
 from ytmusic_searcher import search_youtube_music
-from downloader import download_single, start_playlist_download, ffmpeg_available, download_jobs, DOWNLOADS_DIR, COOKIE_FILE
+from downloader import download_single, start_playlist_download, ffmpeg_available, download_jobs, DOWNLOADS_DIR, COOKIE_FILE, _sanitize, _build_ydl_opts, _has_ffmpeg, _get_cookie_file
 
 app = Flask(__name__)
 init_db()
@@ -189,7 +190,7 @@ def api_download_track():
     ext = os.path.splitext(filepath)[1].lstrip(".")
     mimetype_map = {"mp3": "audio/mpeg", "m4a": "audio/mp4", "webm": "audio/webm", "opus": "audio/ogg"}
     mime = mimetype_map.get(ext, "audio/mpeg")
-    safe_name = f"{artist} - {title}.{ext}" if artist else f"{title}.{ext}"
+    safe_name = f"{title} - {artist}.{ext}" if artist else f"{title}.{ext}"
 
     return send_file(
         filepath,
@@ -197,6 +198,83 @@ def api_download_track():
         as_attachment=True,
         download_name=safe_name,
     )
+
+
+@app.route("/api/stream/track")
+def api_stream_track():
+    """
+    Direct-to-browser streaming download.
+    Downloads the track to a private temp file, streams it straight to the user's
+    browser, then deletes the temp file — nothing is stored permanently on the server.
+    """
+    import tempfile
+    from flask import after_this_request
+
+    yt_url = request.args.get("url", "").strip()
+    title   = request.args.get("title", "track").strip()
+    artist  = request.args.get("artist", "").strip()
+    quality = request.args.get("quality", "best").strip()
+
+    if not yt_url:
+        return jsonify({"error": "No URL provided"}), 400
+
+    # Create a private temp directory so yt-dlp has an isolated, writable workspace
+    tmp_dir = tempfile.mkdtemp(prefix="spotisync_")
+
+    try:
+        import yt_dlp as yt_dlp_lib
+
+        safe_name = _sanitize(f"{title} - {artist}" if artist else title)
+        out_template = os.path.join(tmp_dir, f"{safe_name}.%(ext)s")
+
+        use_ffmpeg = _has_ffmpeg()
+        ydl_opts, ext_hint = _build_ydl_opts(out_template, quality, use_ffmpeg)
+
+        with yt_dlp_lib.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(yt_url, download=True)
+            if ext_hint:
+                filepath = os.path.join(tmp_dir, f"{safe_name}.{ext_hint}")
+            else:
+                actual_ext = info.get("ext", "m4a")
+                filepath = os.path.join(tmp_dir, f"{safe_name}.{actual_ext}")
+
+        if not os.path.exists(filepath):
+            # Try any file found in the temp dir
+            files = os.listdir(tmp_dir)
+            if files:
+                filepath = os.path.join(tmp_dir, files[0])
+            else:
+                shutil.rmtree(tmp_dir, ignore_errors=True)
+                return jsonify({"error": "Download failed — no file produced"}), 500
+
+    except Exception as e:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        print(f"[stream] Error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+    ext = os.path.splitext(filepath)[1].lstrip(".")
+    mimetype_map = {"mp3": "audio/mpeg", "m4a": "audio/mp4", "webm": "audio/webm", "opus": "audio/ogg"}
+    mime = mimetype_map.get(ext, "audio/mpeg")
+    download_name = f"{title} - {artist}.{ext}" if artist else f"{title}.{ext}"
+
+    # Clean up the entire temp dir after the response is sent
+    @after_this_request
+    def cleanup(response):
+        try:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+            print(f"[stream] Cleaned up temp dir: {tmp_dir}")
+        except Exception as ex:
+            print(f"[stream] Cleanup error: {ex}")
+        return response
+
+    print(f"[stream] Streaming '{download_name}' ({os.path.getsize(filepath)} bytes) to browser")
+    return send_file(
+        filepath,
+        mimetype=mime,
+        as_attachment=True,
+        download_name=download_name,
+    )
+
 
 
 @app.route("/api/download/playlist/<int:playlist_id>", methods=["POST"])

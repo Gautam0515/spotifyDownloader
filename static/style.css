@@ -451,6 +451,34 @@ body {
   background: #1ed760 !important;
 }
 
+/* Direct Download (stream) button — glowing green */
+.btn-stream {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 13px;
+  border-radius: 8px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  background: linear-gradient(135deg, #1db954, #0f9942);
+  color: #fff;
+  transition: all 0.2s;
+  box-shadow: 0 0 12px rgba(29,185,84,0.35);
+}
+.btn-stream:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 0 20px rgba(29,185,84,0.55);
+  background: linear-gradient(135deg, #1ed760, #1db954);
+}
+.btn-stream:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
 .input-hint {
   font-size: 12px;
   color: var(--text-secondary);
