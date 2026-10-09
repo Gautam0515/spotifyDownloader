@@ -7,9 +7,10 @@ Supports MP3 (requires ffmpeg) and best-quality M4A/WebM (no ffmpeg needed).
 
 import os
 import shutil
-import tempfile
 import threading
 import zipfile
+import time
+import traceback
 import yt_dlp
 
 try:
@@ -18,20 +19,31 @@ try:
 except ImportError:
     FFMPEG_PATH = shutil.which("ffmpeg")
 
-import time
-if os.environ.get("VERCEL") or os.environ.get("RENDER"):
+# ── Directory setup ───────────────────────────────────────────────────────────
+if os.environ.get("VERCEL"):
     DOWNLOADS_DIR = "/tmp/downloads"
+elif os.environ.get("RENDER"):
+    # On Render, use a sub-folder inside the project directory (ephemeral disk)
+    DOWNLOADS_DIR = os.path.join(os.path.dirname(__file__), "downloads")
 else:
+    # Locally: save into the user's own Downloads folder
     DOWNLOADS_DIR = os.path.join(os.path.expanduser("~"), "Downloads")
+
 os.makedirs(DOWNLOADS_DIR, exist_ok=True)
 
 
-# In-memory download job tracker
+# In-memory download job tracker (dict is shared because we force 1 gunicorn worker)
 download_jobs: dict = {}
 
 
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
 def _has_ffmpeg() -> bool:
     return FFMPEG_PATH is not None
+
+
+def ffmpeg_available() -> bool:
+    return _has_ffmpeg()
 
 
 def _sanitize(name: str) -> str:
@@ -40,6 +52,7 @@ def _sanitize(name: str) -> str:
     for ch in bad:
         name = name.replace(ch, "")
     return name.strip()[:100]
+
 
 def _build_ydl_opts(out_template: str, quality: str, use_ffmpeg: bool) -> tuple:
     """
@@ -50,7 +63,7 @@ def _build_ydl_opts(out_template: str, quality: str, use_ffmpeg: bool) -> tuple:
         "outtmpl": out_template,
         "quiet": True,
         "no_warnings": True,
-        "nooverwrites": False,         # allow overwrite to avoid stale partials
+        "nooverwrites": False,
         "extractor_args": {"youtube": {"player_client": ["android", "web"]}},
     }
     if FFMPEG_PATH:
@@ -66,7 +79,6 @@ def _build_ydl_opts(out_template: str, quality: str, use_ffmpeg: bool) -> tuple:
                 "preferredquality": bitrate,
             },
             {
-                # Embeds title, artist, album, date into the MP3 ID3 tags
                 "key": "FFmpegMetadata",
                 "add_metadata": True,
                 "add_chapters": False,
@@ -76,7 +88,6 @@ def _build_ydl_opts(out_template: str, quality: str, use_ffmpeg: bool) -> tuple:
     else:
         base["format"] = "bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best"
         if use_ffmpeg:
-            # Still embed metadata even without transcoding
             base["postprocessors"] = [{
                 "key": "FFmpegMetadata",
                 "add_metadata": True,
@@ -85,15 +96,17 @@ def _build_ydl_opts(out_template: str, quality: str, use_ffmpeg: bool) -> tuple:
         return base, None  # ext determined after download
 
 
+# ── Single-track download ─────────────────────────────────────────────────────
+
 def download_single(youtube_url: str, title: str, artist: str, quality: str = "best") -> str:
     """
     Download a single track from a YouTube Music URL.
     Filename format: "Song Name - Artist.ext"
-    Returns the path to the downloaded file.
+    Returns the absolute path to the downloaded file.
     """
     os.makedirs(DOWNLOADS_DIR, exist_ok=True)
 
-    # Song first, then artist
+    # Song name first, then artist
     safe_name = _sanitize(f"{title} - {artist}" if artist else title)
     out_template = os.path.join(DOWNLOADS_DIR, f"{safe_name}.%(ext)s")
 
@@ -111,8 +124,10 @@ def download_single(youtube_url: str, title: str, artist: str, quality: str = "b
     return filepath
 
 
-def _playlist_download_worker(job_id: str, tracks: list, folder_name: str, quality: str):
-    """Background thread: download all tracks in a playlist."""
+# ── Playlist download (background thread) ─────────────────────────────────────
+
+def _playlist_download_worker(job_id: str, tracks: list, playlist_name: str, quality: str):
+    """Background thread: download all tracks, then ZIP them up."""
     total = len(tracks)
     download_jobs[job_id] = {
         "status": "running",
@@ -121,30 +136,30 @@ def _playlist_download_worker(job_id: str, tracks: list, folder_name: str, quali
         "done": [],
         "failed": [],
         "folder": "",
-        # zip_path removed — ZIP creation is disabled
+        "zip_path": None,
+        "zip_name": None,
         "eta_seconds": None,
-        "error": None,
+        "zip_error": None,   # separate field so it doesn't overwrite status
     }
 
-    playlist_dir = os.path.join(DOWNLOADS_DIR, _sanitize(folder_name))
+    # ── Create a playlist-specific sub-folder ─────────────────────────────────
+    safe_folder = _sanitize(playlist_name)
+    playlist_dir = os.path.join(DOWNLOADS_DIR, safe_folder)
     os.makedirs(playlist_dir, exist_ok=True)
     download_jobs[job_id]["folder"] = playlist_dir
 
     use_ffmpeg = _has_ffmpeg()
-    # Build shared ydl_opts using helper (placeholder outtmpl, overridden per-track)
     _shared_opts, _ext = _build_ydl_opts("PLACEHOLDER", quality, use_ffmpeg)
     ydl_opts = {k: v for k, v in _shared_opts.items() if k != "outtmpl"}
     ext = _ext
 
     start_time = time.time()
+
     for i, track in enumerate(tracks):
         yt_url = track.get("youtube_music_url") or track.get("youtube_url", "")
         name = track.get("track_name") or track.get("name", "Unknown")
         artists = track.get("artists", [])
-        if isinstance(artists, list):
-            artist_str = ", ".join(artists)
-        else:
-            artist_str = str(artists)
+        artist_str = ", ".join(artists) if isinstance(artists, list) else str(artists)
 
         if not yt_url:
             download_jobs[job_id]["failed"].append(name)
@@ -161,17 +176,17 @@ def _playlist_download_worker(job_id: str, tracks: list, folder_name: str, quali
                 ydl.download([yt_url])
             download_jobs[job_id]["done"].append(name)
         except Exception as e:
+            print(f"[downloader] Failed to download '{name}': {e}")
             download_jobs[job_id]["failed"].append(name)
 
         download_jobs[job_id]["progress"] = i + 1
-        
+
         # Calculate ETA
         elapsed = time.time() - start_time
-        avg_time_per_track = elapsed / (i + 1)
-        remaining_tracks = total - (i + 1)
-        download_jobs[job_id]["eta_seconds"] = int(avg_time_per_track * remaining_tracks)
+        avg_time = elapsed / (i + 1)
+        download_jobs[job_id]["eta_seconds"] = int(avg_time * (total - (i + 1)))
 
-    safe_folder = _sanitize(playlist_name)
+    # ── Create ZIP from the playlist folder ──────────────────────────────────
     zip_path = os.path.join(DOWNLOADS_DIR, f"{safe_folder}.zip")
     try:
         with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -179,17 +194,19 @@ def _playlist_download_worker(job_id: str, tracks: list, folder_name: str, quali
                 for file in files:
                     file_path = os.path.join(root, file)
                     zf.write(file_path, arcname=file)
-        
-        # We NO LONGER delete the playlist_dir! The user wants the folder to stay on the server.
+
         download_jobs[job_id]["zip_path"] = zip_path
         download_jobs[job_id]["zip_name"] = f"{safe_folder}.zip"
+        print(f"[downloader] ZIP ready: {zip_path}")
     except Exception as e:
-        print(f"ZIPPING ERROR: {e}")
-        import traceback
+        print(f"[downloader] ZIP creation failed: {e}")
         traceback.print_exc()
-        download_jobs[job_id]["error"] = f"Zipping failed: {e}"
+        # Store in separate key so it doesn't block the "done" status
+        download_jobs[job_id]["zip_error"] = f"ZIP creation failed: {e}"
 
+    # Mark the job done regardless of whether zip succeeded
     download_jobs[job_id]["status"] = "done"
+    print(f"[downloader] Job {job_id} complete. done={len(download_jobs[job_id]['done'])}, failed={len(download_jobs[job_id]['failed'])}")
 
 
 def start_playlist_download(job_id: str, tracks: list, playlist_name: str, quality: str = "best"):
@@ -200,7 +217,3 @@ def start_playlist_download(job_id: str, tracks: list, playlist_name: str, quali
         daemon=True,
     )
     t.start()
-
-
-def ffmpeg_available() -> bool:
-    return _has_ffmpeg()

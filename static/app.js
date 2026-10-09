@@ -340,11 +340,17 @@ async function downloadTrack(url, title, artist, btn) {
   const params = new URLSearchParams({ url, title, artist, quality });
   const downloadUrl = `/api/download/track?${params}`;
   
-  // Native browser download (works best on iOS/Android)
-  window.location.href = downloadUrl;
+  // Use a hidden <a> click so we don't navigate away from the page
+  const a = document.createElement('a');
+  a.href = downloadUrl;
+  a.download = title || 'track';
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => document.body.removeChild(a), 1000);
   
-  setTimeout(() => { btn.innerHTML = '✅ Done'; }, 1000);
-  setTimeout(() => { btn.innerHTML = originalText; btn.disabled = false; }, 3000);
+  setTimeout(() => { btn.innerHTML = '✅ Done'; }, 2000);
+  setTimeout(() => { btn.innerHTML = originalText; btn.disabled = false; }, 4000);
 }
 
 let dlPollInterval = null;
@@ -403,16 +409,18 @@ function formatEta(seconds) {
 async function pollDownloadJob(jobId, btn) {
   try {
     const res = await fetch(`/api/download/status/${jobId}`);
-    const job = await res.json();
     
-    if (job.error && !job.status) {
+    // 404 = server restarted and lost the job from memory
+    if (res.status === 404) {
       clearInterval(dlPollInterval);
       if (btn) btn.disabled = false;
-      showToast(`Download failed: Server disconnected or restarted.`, 'error');
+      showToast('⚠️ Server restarted during download. Please try again.', 'error');
       closeDlModal();
       return;
     }
 
+    const job = await res.json();
+    
     if (job.total > 0) {
       document.getElementById('dlModalStats').textContent = `${job.progress} / ${job.total} tracks`;
       document.getElementById('dlProgressFill').style.width = `${(job.progress / job.total) * 100}%`;
@@ -421,29 +429,43 @@ async function pollDownloadJob(jobId, btn) {
     document.getElementById('dlModalEta').textContent = `ETA: ${formatEta(job.eta_seconds)}`;
 
     if (job.folder) {
-      document.getElementById('dlModalFolder').textContent = `Saving to: ${job.folder}`;
+      document.getElementById('dlModalFolder').textContent = `⬇️ Downloading to server...`;
     }
     
     if (job.status === 'done' || job.status === 'error') {
       clearInterval(dlPollInterval);
-      btn.disabled = false;
+      if (btn) btn.disabled = false;
+
       if (job.status === 'done') {
-        document.getElementById('dlModalStats').textContent = `${job.total} / ${job.total} tracks \u2014 Done!`;
-        document.getElementById('dlModalEta').textContent = 'Finished';
-        document.getElementById('dlModal').querySelector('.dl-modal-title').textContent = '\u2705 Ready to Download!';
+        document.getElementById('dlModalStats').textContent = `${job.total} / ${job.total} tracks — Done!`;
+        document.getElementById('dlModalEta').textContent = 'Finished!';
+        document.getElementById('dlModal').querySelector('.dl-modal-title').textContent = '✅ Ready to Download!';
         
         const folderEl = document.getElementById('dlModalFolder');
-        folderEl.innerHTML = `<a href="/api/download/zip/${jobId}" class="btn-primary" style="display:inline-block; padding:12px 24px; text-decoration:none; margin-top:15px; font-weight:bold;">📥 Save ZIP to Device</a>`;
         
-        showToast('\u2705 Ready! Tap the button to save.', 'success');
+        if (job.zip_path) {
+          // ZIP is ready — show download button
+          folderEl.innerHTML = `<a href="/api/download/zip/${jobId}" class="btn-primary" style="display:inline-block; padding:12px 28px; text-decoration:none; margin-top:15px; font-size:1rem; font-weight:700; border-radius:10px;">📥 Save ZIP to Device</a>`;
+          showToast('✅ Ready! Tap the button to save your playlist.', 'success');
+        } else if (job.zip_error) {
+          // Songs downloaded but zipping failed (e.g. disk full)
+          folderEl.textContent = `⚠️ Songs downloaded but ZIP failed: ${job.zip_error}`;
+          showToast(`⚠️ ${job.zip_error}`, 'error');
+        } else {
+          // Zipping still in progress (rare race condition)
+          folderEl.textContent = '⏳ Preparing ZIP... please wait.';
+          // Keep polling
+          dlPollInterval = setInterval(() => pollDownloadJob(jobId, btn), 2000);
+          return;
+        }
         
         if (selectMode) toggleSelectMode();
       } else {
-        showToast(`Error: ${job.error}`, 'error');
+        showToast(`❌ Download error: ${job.error || 'Unknown error'}`, 'error');
       }
     }
   } catch (e) {
-    console.error(e);
+    console.error('Poll error:', e);
   }
 }
 

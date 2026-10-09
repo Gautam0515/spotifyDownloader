@@ -200,21 +200,28 @@ def api_download_status(job_id):
     job = download_jobs.get(job_id)
     if not job:
         return jsonify({"error": "Job not found"}), 404
-    return jsonify(job)
+    # Return a copy of the job, but convert zip_path to a boolean
+    # so the client knows if zip is ready without exposing server paths
+    data = dict(job)
+    data["zip_path"] = bool(job.get("zip_path") and os.path.exists(job["zip_path"]))
+    return jsonify(data)
 
 
 @app.route("/api/download/zip/<job_id>")
 def api_download_zip(job_id):
-    """Stream the completed ZIP file to the browser and then delete it."""
+    """Stream the completed ZIP file to the browser."""
     job = download_jobs.get(job_id)
     if not job:
-        return jsonify({"error": "Job not found"}), 404
+        return jsonify({"error": "Job not found. Server may have restarted."}), 404
 
     zip_path = job.get("zip_path")
     zip_name = job.get("zip_name", "playlist.zip")
 
     if not zip_path or not os.path.exists(zip_path):
-        return jsonify({"error": "ZIP file not ready or already downloaded"}), 404
+        # Check for a zip_error to give a better message
+        if job.get("zip_error"):
+            return jsonify({"error": job["zip_error"]}), 500
+        return jsonify({"error": "ZIP file not ready yet. Please wait a moment and try again."}), 404
 
     return send_file(
         zip_path,
